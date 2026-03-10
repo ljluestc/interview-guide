@@ -2,11 +2,15 @@ package interview.guide.modules.knowledgebase;
 
 import interview.guide.common.annotation.RateLimit;
 import interview.guide.common.result.Result;
+import interview.guide.modules.knowledgebase.model.BatchImportRequest.BooksImportRequest;
+import interview.guide.modules.knowledgebase.model.BatchImportRequest.JsonlImportRequest;
+import interview.guide.modules.knowledgebase.model.BatchImportResult;
 import interview.guide.modules.knowledgebase.model.KnowledgeBaseListItemDTO;
 import interview.guide.modules.knowledgebase.model.KnowledgeBaseStatsDTO;
 import interview.guide.modules.knowledgebase.model.QueryRequest;
 import interview.guide.modules.knowledgebase.model.QueryResponse;
 import interview.guide.modules.knowledgebase.model.VectorStatus;
+import interview.guide.modules.knowledgebase.service.KnowledgeBaseBatchImportService;
 import interview.guide.modules.knowledgebase.service.KnowledgeBaseDeleteService;
 import interview.guide.modules.knowledgebase.service.KnowledgeBaseListService;
 import interview.guide.modules.knowledgebase.service.KnowledgeBaseQueryService;
@@ -38,6 +42,7 @@ public class KnowledgeBaseController {
     private final KnowledgeBaseQueryService queryService;
     private final KnowledgeBaseListService listService;
     private final KnowledgeBaseDeleteService deleteService;
+    private final KnowledgeBaseBatchImportService batchImportService;
 
     /**
      * 获取所有知识库列表
@@ -199,6 +204,28 @@ public class KnowledgeBaseController {
     public Result<Void> revectorize(@PathVariable Long id) {
         uploadService.revectorize(id);
         return Result.success(null);
+    }
+
+    // ========== 批量导入 API ==========
+
+    /**
+     * 批量导入 JSONL Q&A 文件
+     * 从指定目录扫描 .jsonl 文件，解析 Q&A 条目并入库向量化
+     */
+    @PostMapping("/api/knowledgebase/import/jsonl")
+    public Result<BatchImportResult> importJsonl(@Valid @RequestBody JsonlImportRequest request) {
+        log.info("收到 JSONL 批量导入请求: directory={}, category={}", request.directory(), request.category());
+        return Result.success(batchImportService.importJsonlDirectory(request.directory(), request.category()));
+    }
+
+    /**
+     * 批量导入 PDF 书籍
+     * 从指定目录递归扫描 .pdf 文件，使用 Tika 解析后入库向量化
+     */
+    @PostMapping("/api/knowledgebase/import/books")
+    public Result<BatchImportResult> importBooks(@Valid @RequestBody BooksImportRequest request) {
+        log.info("收到书籍批量导入请求: directory={}, useSubdirAsCategory={}, defaultCategory={}", request.directory(), request.useSubdirAsCategory(), request.defaultCategory());
+        return Result.success(batchImportService.importBooksDirectory(request.directory(), request.useSubdirAsCategory(), request.defaultCategory()));
     }
 
 }

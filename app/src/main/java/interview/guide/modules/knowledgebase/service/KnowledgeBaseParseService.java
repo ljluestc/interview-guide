@@ -8,6 +8,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
 /**
  * 知识库解析服务
  * 委托给通用的 DocumentParseService 处理
@@ -54,6 +58,20 @@ public class KnowledgeBaseParseService {
     public String downloadAndParseContent(String storageKey, String originalFilename) {
         log.info("从存储下载并解析知识库文件: {}", originalFilename);
         return documentParseService.downloadAndParseContent(storageService, storageKey, originalFilename);
+    }
+
+    /**
+     * 解析本地文件路径，读取并提取文本内容
+     *
+     * @param localFile 本地文件路径（支持 PDF、DOCX、TXT 等）
+     * @return 提取的文本内容
+     * @throws IOException 文件读取失败时抛出
+     */
+    public String parseLocalFile(Path localFile) throws IOException {
+        String fileName = localFile.getFileName().toString();
+        log.info("开始解析本地文件: {}", localFile);
+        byte[] fileBytes = Files.readAllBytes(localFile);
+        return documentParseService.parseContent(fileBytes, fileName);
     }
 
     /**

@@ -93,6 +93,31 @@ public class KnowledgeBasePersistenceService {
     }
 
     /**
+     * 保存本地导入的知识库元数据到数据库（无 MultipartFile / 无 RustFS 存储）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public KnowledgeBaseEntity saveLocalKnowledgeBase(String name, String category, String originalFilename,
+                                                      long fileSize, String contentType, String fileHash) {
+        try {
+            KnowledgeBaseEntity kb = new KnowledgeBaseEntity();
+            kb.setFileHash(fileHash);
+            kb.setName(name != null && !name.trim().isEmpty() ? name : extractNameFromFilename(originalFilename));
+            kb.setCategory(category != null && !category.trim().isEmpty() ? category.trim() : null);
+            kb.setOriginalFilename(originalFilename);
+            kb.setFileSize(fileSize);
+            kb.setContentType(contentType);
+            // storageKey 和 storageUrl 保持 null（本地导入，不经过 RustFS）
+
+            KnowledgeBaseEntity saved = knowledgeBaseRepository.save(kb);
+            log.info("本地知识库已保存: id={}, name={}, category={}, hash={}", saved.getId(), saved.getName(), saved.getCategory(), fileHash);
+            return saved;
+        } catch (Exception e) {
+            log.error("保存本地知识库失败: {}", e.getMessage(), e);
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "保存本地知识库失败");
+        }
+    }
+
+    /**
      * 从文件名提取知识库名称（去除扩展名）
      */
     private String extractNameFromFilename(String filename) {
