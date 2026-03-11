@@ -20,7 +20,7 @@ import java.util.stream.Stream;
 
 /**
  * 知识库批量导入服务
- * 支持从本地 JSONL Q&A 文件和 PDF 书籍目录批量导入到 pgvector
+ * 支持从本地 JSONL Q&A 文件和文档目录（PDF、PPTX、DOCX、MD）批量导入到 pgvector
  */
 @Slf4j
 @Service
@@ -208,13 +208,15 @@ public class KnowledgeBaseBatchImportService {
         return sb.toString();
     }
 
-    // ==================== Books 导入 ====================
+    // ==================== Books / Documents 导入 ====================
+
+    private static final List<String> DOC_EXTENSIONS = List.of(".pdf", ".pptx", ".docx", ".md");
 
     /**
-     * 从目录中批量导入 PDF 书籍
-     * 递归扫描目录，每本书作为一个知识库条目
+     * 从目录中批量导入文档（PDF、PPTX、DOCX、Markdown）
+     * 递归扫描目录，每个文件作为一个知识库条目
      *
-     * @param directory           书籍根目录
+     * @param directory           文档根目录
      * @param useSubdirAsCategory 是否使用子目录名作为分类
      * @param defaultCategory     根目录下文件的默认分类（当无子目录或 useSubdirAsCategory=false 时使用）
      * @return 导入结果
@@ -225,25 +227,28 @@ public class KnowledgeBaseBatchImportService {
             return new BatchImportResult(0, 0, 0, 0, List.of(), List.of("目录不存在: " + directory));
         }
 
-        List<Path> pdfFiles;
+        List<Path> docFiles;
         try (Stream<Path> stream = Files.walk(dirPath)) {
-            pdfFiles = stream
+            docFiles = stream
                 .filter(Files::isRegularFile)
-                .filter(p -> p.toString().toLowerCase().endsWith(".pdf"))
+                .filter(p -> {
+                    String lower = p.toString().toLowerCase();
+                    return DOC_EXTENSIONS.stream().anyMatch(lower::endsWith);
+                })
                 .sorted()
                 .toList();
         } catch (IOException e) {
-            log.error("扫描书籍目录失败: {}", e.getMessage(), e);
+            log.error("扫描文档目录失败: {}", e.getMessage(), e);
             return new BatchImportResult(0, 0, 0, 0, List.of(), List.of("扫描目录失败: " + e.getMessage()));
         }
 
-        log.info("扫描到 {} 个 PDF 文件: {}", pdfFiles.size(), directory);
+        log.info("扫描到 {} 个文档文件 (pdf/pptx/docx/md): {}", docFiles.size(), directory);
 
         int imported = 0, skipped = 0, failed = 0;
         List<ImportedFileInfo> importedFiles = new ArrayList<>();
         List<String> errors = new ArrayList<>();
 
-        for (Path file : pdfFiles) {
+        for (Path file : docFiles) {
             try {
                 String category = useSubdirAsCategory ? resolveCategory(dirPath, file) : null;
                 if (category == null && defaultCategory != null && !defaultCategory.isBlank()) {
@@ -260,12 +265,12 @@ public class KnowledgeBaseBatchImportService {
             } catch (Exception e) {
                 failed++;
                 errors.add(file.getFileName().toString() + ": " + e.getMessage());
-                log.error("导入书籍失败: {}", file, e);
+                log.error("导入文档失败: {}", file, e);
             }
         }
 
-        log.info("书籍导入完成: total={}, imported={}, skipped={}, failed={}", pdfFiles.size(), imported, skipped, failed);
-        return new BatchImportResult(pdfFiles.size(), imported, skipped, failed, importedFiles, errors);
+        log.info("文档导入完成: total={}, imported={}, skipped={}, failed={}", docFiles.size(), imported, skipped, failed);
+        return new BatchImportResult(docFiles.size(), imported, skipped, failed, importedFiles, errors);
     }
 
     private ImportResult importSingleBook(Path file, String category) throws IOException {
@@ -274,27 +279,28 @@ public class KnowledgeBaseBatchImportService {
 
         // 去重检查
         if (knowledgeBaseRepository.existsByFileHash(fileHash)) {
-            log.info("书籍已存在，跳过: {}", file.getFileName());
+            log.info("文档已存在，跳过: {}", file.getFileName());
             return new ImportResult.Skipped();
         }
 
-        // 使用 Tika 解析 PDF 内容
+        // 使用 Tika 解析文档内容（支持 PDF、PPTX、DOCX、MD 等）
         String filename = file.getFileName().toString();
         String content = parseService.parseLocalFile(file);
         if (content == null || content.isBlank()) {
-            throw new IllegalStateException("无法从 PDF 提取文本内容");
+            throw new IllegalStateException("无法从文档提取文本内容");
         }
 
-        String name = formatBookName(filename);
+        String name = formatDocName(filename);
+        String contentType = detectContentType(filename);
 
         // 保存知识库元数据
         KnowledgeBaseEntity saved = persistenceService.saveLocalKnowledgeBase(
-            name, category, filename, fileBytes.length, "application/pdf", fileHash
+            name, category, filename, fileBytes.length, contentType, fileHash
         );
 
         // 发送向量化任务
         vectorizeStreamProducer.sendVectorizeTask(saved.getId(), content);
-        log.info("书籍已入队向量化: kbId={}, name={}, category={}, contentLength={}",
+        log.info("文档已入队向量化: kbId={}, name={}, category={}, contentLength={}",
             saved.getId(), name, category, content.length());
 
         return new ImportResult.Success(new ImportedFileInfo(saved.getId(), name, category, filename));
@@ -312,12 +318,23 @@ public class KnowledgeBaseBatchImportService {
         return null;
     }
 
-    private String formatBookName(String filename) {
-        // 去掉 .pdf 后缀
-        if (filename.toLowerCase().endsWith(".pdf")) {
-            return filename.substring(0, filename.length() - 4);
+    private String formatDocName(String filename) {
+        String lower = filename.toLowerCase();
+        for (String ext : DOC_EXTENSIONS) {
+            if (lower.endsWith(ext)) {
+                return filename.substring(0, filename.length() - ext.length());
+            }
         }
         return filename;
+    }
+
+    private String detectContentType(String filename) {
+        String lower = filename.toLowerCase();
+        if (lower.endsWith(".pdf")) return "application/pdf";
+        if (lower.endsWith(".pptx")) return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+        if (lower.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        if (lower.endsWith(".md")) return "text/markdown";
+        return "application/octet-stream";
     }
 
     // ==================== 内部结果类型 ====================
