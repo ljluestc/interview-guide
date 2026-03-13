@@ -43,8 +43,9 @@ public class KnowledgeBaseVectorService {
         this.knowledgeBaseRepository = knowledgeBaseRepository;
         // 使用TokenTextSplitter，chunk=800 tokens，overlap=100 tokens
         // 适配 DashScope text-embedding-v3 (1024 dims)
-        // 注意：Spring AI 2.0-M1 的 TokenTextSplitter 使用 builder 模式
-        // chunkOverlap 支持可能需要在后续版本中，当前先设置 chunkSize
+        // 注意：Spring AI 2.0.0-M1 的 TokenTextSplitter 使用 builder 模式
+        // chunkOverlap 参数在 Spring AI 2.0.0-M1 中尚未支持（PR #4054 正在添加中）
+        // 当前配置：chunkSize=800，overlap 功能待 Spring AI 后续版本支持或手动实现
         this.textSplitter = TokenTextSplitter.builder()
             .withChunkSize(800)
             .withKeepSeparator(false)
