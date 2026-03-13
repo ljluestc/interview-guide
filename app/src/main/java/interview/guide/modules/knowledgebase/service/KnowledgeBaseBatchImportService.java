@@ -191,11 +191,16 @@ public class KnowledgeBaseBatchImportService {
                     keywords = node.get("tags");
                 }
                 if (keywords != null && keywords.isArray() && !keywords.isEmpty()) {
-                    String keywordsStr = keywords.stream()
-                        .map(JsonNode::asText)
-                        .filter(s -> !s.isEmpty())
-                        .collect(java.util.stream.Collectors.joining(", "));
-                    if (!keywordsStr.isEmpty()) {
+                    // JsonNode 没有 stream() 方法，需要手动迭代数组元素
+                    List<String> keywordList = new ArrayList<>();
+                    for (JsonNode keywordNode : keywords) {
+                        String keyword = keywordNode.asText();
+                        if (keyword != null && !keyword.isEmpty()) {
+                            keywordList.add(keyword);
+                        }
+                    }
+                    if (!keywordList.isEmpty()) {
+                        String keywordsStr = String.join(", ", keywordList);
                         entry.append("Keywords: ").append(keywordsStr).append("\n");
                     }
                 }

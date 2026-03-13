@@ -43,7 +43,12 @@ public class KnowledgeBaseVectorService {
         this.knowledgeBaseRepository = knowledgeBaseRepository;
         // 使用TokenTextSplitter，chunk=800 tokens，overlap=100 tokens
         // 适配 DashScope text-embedding-v3 (1024 dims)
-        this.textSplitter = new TokenTextSplitter(800, 100);
+        // 注意：Spring AI 2.0-M1 的 TokenTextSplitter 使用 builder 模式
+        // chunkOverlap 支持可能需要在后续版本中，当前先设置 chunkSize
+        this.textSplitter = TokenTextSplitter.builder()
+            .withChunkSize(800)
+            .withKeepSeparator(false)
+            .build();
     }
     /**
      * 将知识库内容向量化并存储
