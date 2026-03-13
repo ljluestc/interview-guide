@@ -199,6 +199,15 @@ public class KnowledgeBaseBatchImportService {
                         entry.append("Keywords: ").append(keywordsStr).append("\n");
                     }
                 }
+                // source, language（JSONL schema 可选字段，便于检索）
+                String source = textOrEmpty(node, "source");
+                if (!source.isEmpty()) {
+                    entry.append("Source: ").append(source).append("\n");
+                }
+                String language = textOrEmpty(node, "language");
+                if (!language.isEmpty()) {
+                    entry.append("Language: ").append(language).append("\n");
+                }
 
                 if (!entry.isEmpty()) {
                     if (!doc.isEmpty()) {

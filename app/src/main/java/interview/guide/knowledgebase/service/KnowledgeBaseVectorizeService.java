@@ -7,7 +7,7 @@ import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
-import org.springframework.ai.document.splitter.TokenTextSplitter;
+import org.springframework.ai.reader.TextReader;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.stereotype.Service;
@@ -40,7 +40,22 @@ public class KnowledgeBaseVectorizeService {
 
             persistenceService.updateVectorStatus(knowledgeBaseId, VectorStatus.PROCESSING);
 
-            TokenTextSplitter splitter = new TokenTextSplitter(CHUNK_SIZE, CHUNK_OVERLAP, CHUNK_SIZE, 100, true);
+            // Split text into chunks using Spring AI TextReader
+            TextReader textReader = new TextReader(textContent);
+            List<Document> documents = textReader.get();
+            
+            // Manually chunk documents if needed
+            List<Document> chunkedDocs = new java.util.ArrayList<>();
+            String fullText = textContent;
+            int offset = 0;
+            while (offset < fullText.length()) {
+                int end = Math.min(offset + CHUNK_SIZE, fullText.length());
+                String chunk = fullText.substring(offset, end);
+                chunkedDocs.add(new Document(chunk, metadata));
+                offset += (CHUNK_SIZE - CHUNK_OVERLAP);
+                if (offset < 0) offset = 0;
+            }
+            documents = chunkedDocs;
             List<Document> documents = splitter.split(new Document(textContent));
 
             int chunkCount = documents.size();
