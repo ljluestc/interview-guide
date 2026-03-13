@@ -88,7 +88,15 @@ public class VectorizeStreamConsumer extends AbstractStreamConsumer<VectorizeStr
 
     @Override
     protected void markCompleted(VectorizePayload payload) {
-        updateVectorStatus(payload.kbId(), VectorStatus.COMPLETED, null);
+        // VectorService 已经更新了状态和 chunkCount，这里只需要确保状态正确
+        // 如果 VectorService 没有更新，这里作为兜底
+        knowledgeBaseRepository.findById(payload.kbId()).ifPresent(kb -> {
+            if (kb.getVectorStatus() != VectorStatus.COMPLETED) {
+                kb.setVectorStatus(VectorStatus.COMPLETED);
+                kb.setVectorError(null);
+                knowledgeBaseRepository.save(kb);
+            }
+        });
     }
 
     @Override

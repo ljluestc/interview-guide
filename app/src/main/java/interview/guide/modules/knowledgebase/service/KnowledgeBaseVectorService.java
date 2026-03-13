@@ -1,5 +1,6 @@
 package interview.guide.modules.knowledgebase.service;
 
+import interview.guide.modules.knowledgebase.repository.KnowledgeBaseRepository;
 import interview.guide.modules.knowledgebase.repository.VectorRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
@@ -29,11 +30,19 @@ public class KnowledgeBaseVectorService {
     private final VectorStore vectorStore;
     private final TextSplitter textSplitter;
     private final VectorRepository vectorRepository;
-    public KnowledgeBaseVectorService(VectorStore vectorStore, VectorRepository vectorRepository) {
+    private final KnowledgeBaseRepository knowledgeBaseRepository;
+    
+    public KnowledgeBaseVectorService(
+        VectorStore vectorStore, 
+        VectorRepository vectorRepository,
+        KnowledgeBaseRepository knowledgeBaseRepository
+    ) {
         this.vectorStore = vectorStore;
         this.vectorRepository = vectorRepository;
-        // 使用TokenTextSplitter，每个chunk约500 tokens，重叠50 tokens
-        this.textSplitter = new TokenTextSplitter();
+        this.knowledgeBaseRepository = knowledgeBaseRepository;
+        // 使用TokenTextSplitter，chunk=800 tokens，overlap=100 tokens
+        // 适配 DashScope text-embedding-v3 (1024 dims)
+        this.textSplitter = new TokenTextSplitter(800, 100);
     }
     /**
      * 将知识库内容向量化并存储
@@ -69,10 +78,26 @@ public class KnowledgeBaseVectorService {
                 log.debug("处理第 {}/{} 批: chunks {}-{}", i + 1, batchCount, start + 1, end);
                 vectorStore.add(batch);
             }
+            // 5. 更新知识库实体：向量化状态和分块数量
+            knowledgeBaseRepository.findById(knowledgeBaseId).ifPresent(kb -> {
+                kb.setVectorStatus(VectorStatus.COMPLETED);
+                kb.setChunkCount(totalChunks);
+                kb.setVectorError(null);
+                knowledgeBaseRepository.save(kb);
+            });
+            
             log.info("知识库向量化完成: kbId={}, chunks={}, batches={}",
                     knowledgeBaseId, totalChunks, batchCount);
         } catch (Exception e) {
             log.error("向量化知识库失败: kbId={}, error={}", knowledgeBaseId, e.getMessage(), e);
+            // 更新状态为失败
+            knowledgeBaseRepository.findById(knowledgeBaseId).ifPresent(kb -> {
+                kb.setVectorStatus(VectorStatus.FAILED);
+                String errorMsg = e.getMessage();
+                kb.setVectorError(errorMsg != null && errorMsg.length() > 500 
+                    ? errorMsg.substring(0, 500) : errorMsg);
+                knowledgeBaseRepository.save(kb);
+            });
             throw new RuntimeException("向量化知识库失败: " + e.getMessage(), e);
         }
     }

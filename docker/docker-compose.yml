@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with pgvector extension for vector storage
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: rag-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: devinterview_knowledgebase
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - rag_network
+
+  # MinIO S3-compatible storage for RAG document storage
+  minio:
+    image: minio/minio:latest
+    container_name: rag-minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - rag_network
+    command: server /data --console-address ':9000'
+
+  # RAG Backend API - Spring Boot application with pgvector
+  rag-api:
+    build:
+      context: ../app
+      dockerfile: Dockerfile
+    container_name: rag-api
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/devinterview_knowledgebase?stringtype=PGObject&characterEncoding=UTF8
+      SPRING_JPA_HIBERNATE_POOL_MAXIMUM_SIZE: 10
+    volumes:
+      - app_data:/data
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - minio
+    networks:
+      - rag_network
+
+volumes:
+  postgres_data:
+  minio_data:
+  app_data:
+
+networks:
+  rag_network:
+    driver: bridge

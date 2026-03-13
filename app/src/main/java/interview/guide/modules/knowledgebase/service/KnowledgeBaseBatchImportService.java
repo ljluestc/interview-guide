@@ -125,7 +125,9 @@ public class KnowledgeBaseBatchImportService {
 
     /**
      * 将 JSONL 文件内容解析为用于向量化的文档文本
-     * 每条 Q&A 格式: Question: ...\nAnswer: ...\nKey Points: ...
+     * 支持多种字段格式：
+     * - question/question_zh, answer/detailed_answer_zh, key_points/key_points_zh
+     * - 每条 Q&A 格式: Question: ...\nAnswer: ...\nKey Points: ...
      */
     private String parseJsonlToDocument(byte[] fileBytes) throws IOException {
         String[] lines = new String(fileBytes).split("\n");
@@ -137,8 +139,20 @@ public class KnowledgeBaseBatchImportService {
                 JsonNode node = objectMapper.readTree(line);
                 StringBuilder entry = new StringBuilder();
 
+                // 支持 question 或 question_zh
                 String question = textOrEmpty(node, "question");
-                String answer = textOrEmpty(node, "answer");
+                if (question.isEmpty()) {
+                    question = textOrEmpty(node, "question_zh");
+                }
+
+                // 支持 answer, detailed_answer_zh, short_answer_zh (优先级: detailed > short > answer)
+                String answer = textOrEmpty(node, "detailed_answer_zh");
+                if (answer.isEmpty()) {
+                    answer = textOrEmpty(node, "short_answer_zh");
+                }
+                if (answer.isEmpty()) {
+                    answer = textOrEmpty(node, "answer");
+                }
 
                 if (!question.isEmpty()) {
                     entry.append("Question: ").append(question).append("\n");
@@ -147,8 +161,11 @@ public class KnowledgeBaseBatchImportService {
                     entry.append("Answer: ").append(answer).append("\n");
                 }
 
-                // key_points 数组
-                JsonNode keyPoints = node.get("key_points");
+                // key_points 或 key_points_zh 数组
+                JsonNode keyPoints = node.get("key_points_zh");
+                if (keyPoints == null || !keyPoints.isArray() || keyPoints.isEmpty()) {
+                    keyPoints = node.get("key_points");
+                }
                 if (keyPoints != null && keyPoints.isArray() && !keyPoints.isEmpty()) {
                     entry.append("Key Points:\n");
                     for (JsonNode kp : keyPoints) {
@@ -159,10 +176,28 @@ public class KnowledgeBaseBatchImportService {
                     }
                 }
 
-                // example 字段
-                String example = textOrEmpty(node, "example");
+                // example 或 example_zh 字段
+                String example = textOrEmpty(node, "example_zh");
+                if (example.isEmpty()) {
+                    example = textOrEmpty(node, "example");
+                }
                 if (!example.isEmpty() && !"N/A".equals(example)) {
                     entry.append("Example: ").append(example).append("\n");
+                }
+
+                // keywords/tags 字段（可选）
+                JsonNode keywords = node.get("keywords");
+                if (keywords == null) {
+                    keywords = node.get("tags");
+                }
+                if (keywords != null && keywords.isArray() && !keywords.isEmpty()) {
+                    String keywordsStr = keywords.stream()
+                        .map(JsonNode::asText)
+                        .filter(s -> !s.isEmpty())
+                        .collect(java.util.stream.Collectors.joining(", "));
+                    if (!keywordsStr.isEmpty()) {
+                        entry.append("Keywords: ").append(keywordsStr).append("\n");
+                    }
                 }
 
                 if (!entry.isEmpty()) {
